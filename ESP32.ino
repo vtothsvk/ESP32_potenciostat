@@ -16,6 +16,7 @@ HardwareSerial mySerial(2);
 //#define STAPSK  "rce6bn743cjr"
 #define STASSID "Wi-Pi"
 #define STAPSK "brg18f12"
+
 #endif
 
 const char *ssid = STASSID;
