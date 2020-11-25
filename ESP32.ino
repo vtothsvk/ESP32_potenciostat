@@ -1,5 +1,4 @@
-#include <AXP192.h>
-#include <IMU.h>
+#include <AXP192.h> //battery lib
 #include <M5Display.h>
 #include <M5StickC.h>
 #include <RTC.h>
@@ -9,9 +8,9 @@
 #include <WebServer.h>
 #include <ESPmDNS.h>
 
-HardwareSerial mySerial(2);
+HardwareSerial mySerial(2); // create 2nd serial instance for Pot/Galvanostat
 
-#ifndef STASSID
+#ifndef STASSID //Wi-Fi Credentials
 //#define STASSID "ADB-CFF9A1"
 //#define STAPSK  "rce6bn743cjr"
 #define STASSID "Wi-Pi"
@@ -20,6 +19,7 @@ HardwareSerial mySerial(2);
 
 const char *ssid = STASSID;
 const char *password = STAPSK;
+char adcData[20];
 
 WebServer server(80);
 
@@ -28,8 +28,9 @@ const int led = 10;
 void setup()
 {
     M5.begin();
-    Serial.begin(115200);
-    mySerial.begin(19200, SERIAL_8N1, 36, 26);
+    Serial.begin(115200);                      // debug Serial
+    mySerial.begin(19200, SERIAL_8N1, 36, 26); // Pot/Galvanostat serial
+
     pinMode(led, OUTPUT);
     digitalWrite(led, 0);
 
@@ -48,25 +49,6 @@ void setup()
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
 
-    if (MDNS.begin("esp8266-dave"))
-    {
-        Serial.println("MDNS responder started");
-    }
-
-    server.on("/", handleRoot);
-
-    server.on("/postplain/", handlePlain);
-
-    server.on("/postform/", handleForm);
-
-    server.on("/led_on/", led_on);
-
-    server.on("/led_off/", led_off);
-    server.onNotFound(handleNotFound);
-
-    server.begin();
-    Serial.println("HTTP server started");
-
     M5.Lcd.fillScreen(BLACK);
     delay(100);
     M5.Lcd.setCursor(0, 10);
@@ -74,46 +56,57 @@ void setup()
     M5.Lcd.setTextSize(1);
     M5.Lcd.printf("M5 Test lcd!");
     Serial.println("M5 Test uart!");
+
     ;
+
+    if (MDNS.begin("ESP32"))
+    {
+        Serial.println("MDNS responder started");
+    }
+
+    server.on("/", handleRoot);
+
+    server.on("/cell_on/", cell_on);
+
+    server.on("/cell_off/", cell_off);
+
+    server.on("/adcread/", adcread);
+    server.onNotFound(handleNotFound);
+
+    server.begin();
+    Serial.println("HTTP server started");
 }
 
 const String postForms = "<html>\
   <head>\
-    <title>ESP8266 Web Server POST handling</title>\
+    <title>ESP32 test server</title>\
     <style>\
       body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
     </style>\
   </head>\
   <body>\
-    <h1>Napis sem volaco! </h1><br>\
-    <form method=\"post\" enctype=\"text/plain\" action=\"/postplain/\">\
-      <input type=\"text\" name=\'{\"Command\": \"\' value=\''><br>\
-      <input type=\"submit\" value=\"Submit\">\
-    </form>\
+    <h1>Potenciostat test page! </h1><br>\
     <h1>LED ON! </h1><br>\
-    <form method=\"post\" enctype=\"text/plain\" action=\"/led_on/\">\
+    <form method=\"post\" enctype=\"text/plain\" action=\"/cell_on/\">\
       <input type=\"submit\" value=\"LED ON\">\
     </form>\
     <h1>LED OFF! </h1><br>\
-    <form method=\"post\" enctype=\"text/plain\" action=\"/led_off/\">\
+    <form method=\"post\" enctype=\"text/plain\" action=\"/cell_off/\">\
       <input type=\"submit\" value=\"LED OFF\">\
     </form>\
-    <h1>POST form data to /postform/</h1><br>\
-    <form method=\"post\" enctype=\"application/x-www-form-urlencoded\" action=\"/postform/\">\
-      <input type=\"text\" name=\"hello\" value=\"world\"><br>\
-      <input type=\"submit\" value=\"Submit\">\
+    <h1>ADCREAD </h1><br>\
+    <form method=\"post\" enctype=\"text/plain\" action=\"/adcread/\">\
+      <input type=\"submit\" value=\"adcread\">\
     </form>\
   </body>\
 </html>";
 
 void handleRoot()
 {
-    // digitalWrite(led, 1);
-    server.send(200, "text/html", postForms);
-    // digitalWrite(led, 0);
+    server.send(200, "text/html", postForms); //post main page
 }
 
-void led_on()
+void cell_on()
 {
     if (server.method() != HTTP_POST)
     {
@@ -121,15 +114,18 @@ void led_on()
     }
     else
     {
-        //digitalWrite(led, 1);
-        server.send(200, "text/plain", "[POST] Led ON");
-        Serial.println("[POST] Led ON");
+        server.send(200, "text/plain", "[POST] CELL ON");
+        Serial.println("[POST] CELL ON");
         digitalWrite(led, 0);
-        mySerial.println("CELL ON");
+        mySerial.print("CELL ON\n");
+        M5.Lcd.fillScreen(BLACK);
+        M5.Lcd.setCursor(0, 10);
+        M5.Lcd.printf("CELL ON\n");
+        expectResponse("OK");
     }
 }
 
-void led_off()
+void adcread()
 {
     if (server.method() != HTTP_POST)
     {
@@ -137,56 +133,58 @@ void led_off()
     }
     else
     {
-        //digitalWrite(led, 1);
-        server.send(200, "text/plain", "[POST] Led OFF");
-        Serial.println("[POST] Led OFF");
-        digitalWrite(led, 1);
-        mySerial.println("CELL OFF");
-    }
-}
+        
+        Serial.println("[POST] ADCread");
+        digitalWrite(led, 0);
+        mySerial.print("ADCREAD\n");
+        M5.Lcd.fillScreen(BLACK);
+        M5.Lcd.setCursor(0, 10);
+        M5.Lcd.printf("ADCREAD\n"); //expect 6bytes of data or "wait"
 
-void handlePlain()
-{
-    if (server.method() != HTTP_POST)
-    {
-        // digitalWrite(led, 1);
-        server.send(405, "text/plain", "Method Not Allowed");
-        // digitalWrite(led, 0);
-    }
-    else
-    {
-        //  digitalWrite(led, 1);
-        server.send(200, "text/plain", "POST body was:\n" + server.arg("plain"));
-        Serial.println("POSTXXX body was:\n" + server.arg("plain"));
-        //  digitalWrite(led, 0);
-    }
-}
+        uartRead6Bytes();
 
-void handleForm()
-{
-    if (server.method() != HTTP_POST)
-    {
-        //digitalWrite(led, 1);
-        server.send(405, "text/plain", "Method Not Allowed");
-        //digitalWrite(led, 0);
-    }
-    else
-    {
-        // digitalWrite(led, 1);
-        String message = "POST form was:\n";
-        for (uint8_t i = 0; i < server.args(); i++)
+        if (strncmp(adcData, "WAIT", 4) == 0)
         {
-            message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+            server.send(200, "text/plain", "Wait for ADC conversion");
+            Serial.println("Wait for ADC conversion");
+            M5.Lcd.printf("Wait\n");
         }
-        server.send(200, "text/plain", message);
-        Serial.println(message);
-        // digitalWrite(led, 0);
+        else
+        {
+            Serial.println("Here is ADC data :");  // here <-- 6bytes of ADC data is ready to send ! 
+            for (int i = 0; i < 6; i++)
+            {
+                server.send(200, "text/plain", "ADC data available");
+                Serial.print(adcData[i],HEX); //print out 6 received ADC bytes
+                M5.Lcd.printf("ok\n");
+                Serial.print(" ");
+
+            }
+        }
+    }
+}
+
+void cell_off()
+{
+    if (server.method() != HTTP_POST)
+    {
+        server.send(405, "text/plain", "Method Not Allowed");
+    }
+    else
+    {
+        server.send(200, "text/plain", "[POST] CELL OFF");
+        Serial.println("[POST] CELL OFF");
+        digitalWrite(led, 1);
+        mySerial.print("CELL OFF\n");
+        M5.Lcd.fillScreen(BLACK);
+        M5.Lcd.setCursor(0, 10);
+        M5.Lcd.printf("CELL OFF\n");
+        expectResponse("OK");
     }
 }
 
 void handleNotFound()
 {
-    digitalWrite(led, 1);
     String message = "File Not Found\n\n";
     message += "URI: ";
     message += server.uri();
@@ -200,10 +198,83 @@ void handleNotFound()
         message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
     }
     server.send(404, "text/plain", message);
-    //digitalWrite(led, 0);
 }
 
 void loop(void)
 {
     server.handleClient();
+}
+
+void expectResponse(char *expResponse)
+{
+    bool timeout = false;
+    bool responded = false;
+    unsigned long currentMillis = millis();
+    unsigned long previousMillis = currentMillis;
+    uint interval = 50;
+
+    while (!timeout && !responded)
+    {
+        if (currentMillis - previousMillis >= interval)
+        {
+            responded = false;
+            timeout = true;
+        }
+        else
+        {
+            currentMillis = millis();
+        }
+        if (mySerial.available())
+        {
+            responded = true;
+        }
+    }
+
+    if (responded)
+    {
+        char receivedResponse[10];
+        uint8_t i = 0;
+        uint8_t c;
+        while (mySerial.available())
+        {
+
+            c = mySerial.read();
+            while ((c != '\r') && (c != '\n') && (i < 9))
+            {
+                receivedResponse[i] = c;
+                i++;
+                c = mySerial.read();
+            }
+        }
+        receivedResponse[i] = '\0';
+        Serial.println(receivedResponse);
+        if (strncmp(receivedResponse, expResponse, 2) == 0)
+        {
+            Serial.println("reception correct");
+            M5.Lcd.printf("Response OK\n");
+        }
+        else
+        {
+            Serial.println("reception incorrect");
+            M5.Lcd.printf("Response !OK\n");
+        }
+    }
+    else
+    {
+        Serial.println("response timeout");
+        M5.Lcd.printf("Resp. timeout\n");
+    }
+}
+
+void uartRead6Bytes()
+{
+
+    if (mySerial.available())
+    {
+        for (int i = 0; i < 6; i++)
+        {
+            adcData[i] = mySerial.read();
+        }
+        mySerial.flush();
+    }
 }
