@@ -1,3 +1,8 @@
+#include <ArduinoJson.h>
+
+#include <ArduinoJson.h>
+
+#include <ArduinoJson.h>
 #include <AXP192.h>
 #include <IMU.h>
 #include <M5Display.h>
@@ -11,11 +16,14 @@
 
 HardwareSerial mySerial(2);
 
+
+const size_t MAX_CONTENT_SIZE = 512;       // max size of the HTTP response
+
 #ifndef STASSID
-//#define STASSID "ADB-CFF9A1"
-//#define STAPSK  "rce6bn743cjr"
-#define STASSID "Wi-Pi"
-#define STAPSK "brg18f12"
+#define STASSID "ADB-CFF9A1"
+#define STAPSK  "rce6bn743cjr"
+//#define STASSID "Wi-Pi"
+//#define STAPSK "brg18f12"
 
 #endif
 
@@ -49,10 +57,20 @@ void setup()
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
 
-    if (MDNS.begin("esp8266-dave"))
+    //M5.Lcd.fillScreen(BLACK);
+    //delay(100);
+    //M5.Lcd.setCursor(0, 10);
+    //M5.Lcd.setTextColor(WHITE);
+    //M5.Lcd.setTextSize(2);
+    //const char* IP_addr = WiFi.localIP();
+   // M5.Lcd.printf();
+
+    if (MDNS.begin("esp8266"))
     {
         Serial.println("MDNS responder started");
     }
+
+    server.on("/json",json_test);
 
     server.on("/", handleRoot);
 
@@ -67,14 +85,14 @@ void setup()
 
     server.begin();
     Serial.println("HTTP server started");
-
+  /*
     M5.Lcd.fillScreen(BLACK);
     delay(100);
     M5.Lcd.setCursor(0, 10);
     M5.Lcd.setTextColor(WHITE);
     M5.Lcd.setTextSize(1);
     M5.Lcd.printf("M5 Test lcd!");
-    Serial.println("M5 Test uart!");
+    Serial.println("M5 Test uart!"); */
     ;
 }
 
@@ -99,13 +117,99 @@ const String postForms = "<html>\
     <form method=\"post\" enctype=\"text/plain\" action=\"/led_off/\">\
       <input type=\"submit\" value=\"LED OFF\">\
     </form>\
-    <h1>POST form data to /postform/</h1><br>\
-    <form method=\"post\" enctype=\"application/x-www-form-urlencoded\" action=\"/postform/\">\
-      <input type=\"text\" name=\"hello\" value=\"world\"><br>\
+  </body>\
+</html>";
+
+
+const String LED_ON_HTML = "<html>\
+  <head>\
+    <title>ESP8266 Web Server POST handling</title>\
+    <style>\
+      body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
+    </style>\
+  </head>\
+  <body>\
+    <h1>Napis sem volaco! </h1><br>\
+    <form method=\"post\" enctype=\"text/plain\" action=\"/postplain/\">\
+      <input type=\"text\" name=\'{\"Command\": \"\' value=\''><br>\
       <input type=\"submit\" value=\"Submit\">\
+    </form>\
+    <h1>LED ON! </h1><br>\
+    <form method=\"post\" enctype=\"text/plain\" action=\"/led_on/\">\
+      <input type=\"submit\" value=\"LED ON\">\
+    </form>\
+    <h1>LED OFF! </h1><br>\
+    <form method=\"post\" enctype=\"text/plain\" action=\"/led_off/\">\
+      <input type=\"submit\" value=\"LED OFF\">\
     </form>\
   </body>\
 </html>";
+
+
+
+const String LED_OFF_HTML = "<html>\
+  <head>\
+    <title>ESP8266 Web Server POST handling</title>\
+    <style>\
+      body { background-color: #cccc00; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
+    </style>\
+  </head>\
+  <body>\
+    <h1>Napis sem volaco! </h1><br>\
+    <form method=\"post\" enctype=\"text/plain\" action=\"/postplain/\">\
+      <input type=\"text\" name=\'{\"Command\": \"\' value=\''><br>\
+      <input type=\"submit\" value=\"Submit\">\
+    </form>\
+    <h1>LED ON! </h1><br>\
+    <form method=\"post\" enctype=\"text/plain\" action=\"/led_on/\">\
+      <input type=\"submit\" value=\"LED ON\">\
+    </form>\
+    <h1>LED OFF! </h1><br>\
+    <form method=\"post\" enctype=\"text/plain\" action=\"/led_off/\">\
+      <input type=\"submit\" value=\"LED OFF\">\
+    </form>\
+  </body>\
+</html>";
+
+
+
+void json_test()
+{
+ if (server.method() != HTTP_GET)
+    {
+        server.send(405, "text/plain", "Method Not Allowed");
+    }
+    else
+    {
+        StaticJsonDocument<200> Buffer;
+        //JsonObject& root = jsonBuffer.createObject();   // struktura
+        Buffer["ADC"] = "ADC1";
+
+        JsonArray data = Buffer.createNestedArray("data"); // vnorena struktura
+          data.add(11);                 // jednotlive bajty prosceeee 
+          data.add(22); 
+          data.add(33); 
+
+        JsonArray data_2 = Buffer.createNestedArray("data_2");
+          data_2.add(44);                 
+          data_2.add(55); 
+          data_2.add(66); 
+        //Buffer.printTo(Serial);
+
+        String json;
+        serializeJson(Buffer, json);          //naondim to na json formatik
+
+
+        
+
+        //digitalWrite(led, 1);
+        server.send(200, "application/json", json);  //proscceeee
+        Serial.println("[POST] Led ON");
+        digitalWrite(led, 0);
+        mySerial.println("CELL ON");
+    }
+}
+
 
 void handleRoot()
 {
@@ -113,6 +217,7 @@ void handleRoot()
     server.send(200, "text/html", postForms);
     // digitalWrite(led, 0);
 }
+
 
 void led_on()
 {
@@ -123,7 +228,7 @@ void led_on()
     else
     {
         //digitalWrite(led, 1);
-        server.send(200, "text/plain", "[POST] Led ON");
+        server.send(200, "text/html", LED_ON_HTML);
         Serial.println("[POST] Led ON");
         digitalWrite(led, 0);
         mySerial.println("CELL ON");
@@ -139,12 +244,13 @@ void led_off()
     else
     {
         //digitalWrite(led, 1);
-        server.send(200, "text/plain", "[POST] Led OFF");
+        server.send(200, "text/html", LED_OFF_HTML);
         Serial.println("[POST] Led OFF");
         digitalWrite(led, 1);
         mySerial.println("CELL OFF");
     }
 }
+
 
 void handlePlain()
 {
